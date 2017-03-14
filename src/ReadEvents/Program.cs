@@ -12,24 +12,33 @@ using ProtoBuf;
 
 namespace ReadEvents
 {
+    public static class Constants
+    {
+        public const int MinConsumerCount = 4;
+        public const int MaxConsumerCount = 8;
+
+        public const int MinProducerCount = 2;
+        public const int MaxProducerCount = 2; // max 12
+
+        public const int EventsToRead = 0; // max 200,000. 0 for all
+    }
+
     public class Program
     {
-        private const int minConsumerCount = 1;
-        private const int maxConsumerCount = 12;
-
-        private const int producerCount = 12; // max 12
-
         public static void Main(string[] args)
         {
             Log.Enabled = false;
 
-            for (int consumers = minConsumerCount; consumers <= maxConsumerCount; consumers++)
+            for (int producers = Constants.MinProducerCount; producers <= Constants.MaxProducerCount; producers++)
             {
-                Run(consumers);
+                for (int consumers = Constants.MinConsumerCount; consumers <= Constants.MaxConsumerCount; consumers++)
+                {
+                    Run(producers, consumers);
+                }
             }
         }
 
-        private static void Run(int consumerCount)
+        private static void Run(int producerCount, int consumerCount)
         {
             var sw = new Stopwatch();
             sw.Start();
@@ -37,7 +46,7 @@ namespace ReadEvents
             var queue =
                 new BufferBlock<EventDto>(new ExecutionDataflowBlockOptions
                 {
-                    MaxDegreeOfParallelism = Math.Min(maxConsumerCount, Environment.ProcessorCount)
+                    MaxDegreeOfParallelism = Math.Min(Constants.MaxConsumerCount, Environment.ProcessorCount)
 //                    MaxMessagesPerTask = 50,
 //                    BoundedCapacity  = 100 * consumerCount
                 });
@@ -49,16 +58,16 @@ namespace ReadEvents
                 consumers.Add(new Consumer().AwaitEvents(queue));
             }
 
-            StartProducers(queue).Wait();
+            StartProducers(queue, producerCount).Wait();
 
             var list = consumers.SelectMany(x => x.Result).ToList();
 
             sw.Stop();
 
-            Console.WriteLine($"{consumerCount} consumers -> {list.Count} events read in {sw.ElapsedMilliseconds}ms");
+            Console.WriteLine($"{producerCount} producers {consumerCount} consumers -> {list.Count:###,###,###} events read in {sw.ElapsedMilliseconds}ms");
         }
 
-        private static async Task StartProducers(ITargetBlock<EventDto> block)
+        private static async Task StartProducers(ITargetBlock<EventDto> block, int producerCount)
         {
             var typeMap = new TypeMap();
 
@@ -66,7 +75,7 @@ namespace ReadEvents
             
             for (int month = 1; month <= producerCount; month++)
             {
-                tasks[month-1] = new Producer(typeMap).Start(block, 2016, month);
+                tasks[month-1] = new Producer(typeMap).Start(block, 2016, month, producerCount);
             }
 
             await Task.WhenAll(tasks);
@@ -106,7 +115,7 @@ namespace ReadEvents
             _typeMap = typeMap;
         }
 
-        public async Task Start(ITargetBlock<EventDto> target, int yyyy, int mm)
+        public async Task Start(ITargetBlock<EventDto> target, int yyyy, int mm, int producerCount)
         {
             Log.Message($"Start read for {mm}-{yyyy}");
 
@@ -114,7 +123,14 @@ namespace ReadEvents
 
             var connectionString = "Data Source=Lon-DevSQL-2K8;Initial Catalog=EventStore_Trunk;Integrated Security=True";
 
-            var sql = $"SELECT TOP 50000 E.[Event],T.[TypeName] AS [EventType] FROM [Events_{partition}] E JOIN [Types] T ON T.TypeId=E.TypeId";
+            string top = "";
+            if (Constants.EventsToRead > 0)
+            {
+                int recordCount = Constants.EventsToRead / producerCount;
+                top = $"TOP {recordCount}";
+            }
+
+            var sql = $"SELECT {top} E.[Event],T.[TypeName] AS [EventType] FROM [Events_{partition}] E JOIN [Types] T ON T.TypeId=E.TypeId";
 
             using (var cx = new SqlConnection(connectionString))
             {
