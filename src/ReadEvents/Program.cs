@@ -17,6 +17,8 @@ namespace ReadEvents
         private const int minConsumerCount = 1;
         private const int maxConsumerCount = 10;
 
+        private const int producerCount = 12; // max 12
+
         public static void Main(string[] args)
         {
             Log.Enabled = false;
@@ -60,14 +62,14 @@ namespace ReadEvents
         {
             var typeMap = new TypeMap();
 
-            var p1 = new Producer(typeMap);
-            var p2 = new Producer(typeMap);
-            var p3 = new Producer(typeMap);
+            var tasks = new Task[producerCount];
+            
+            for (int month = 1; month <= producerCount; month++)
+            {
+                tasks[month-1] = new Producer(typeMap).Start(block, 2016, month);
+            }
 
-            await Task.WhenAll(
-                p1.Start(block, 2017, 1), 
-                p2.Start(block, 2017, 2), 
-                p3.Start(block, 2017, 3));
+            await Task.WhenAll(tasks);
 
             block.Complete();
         }
