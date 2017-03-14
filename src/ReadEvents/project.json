@@ -1,0 +1,20 @@
+﻿{
+  "version": "1.0.0-*",
+  "buildOptions": {
+    "emitEntryPoint": true
+  },
+
+  "dependencies": {
+    "Fri.Xhl.Domain.Events": "1.1.1202",
+    "protobuf-net": "2.1.0"
+  },
+
+  "frameworks": {
+    "net452": {
+      "dependencies": {
+        "System.Data.SqlClient": "4.3.0",
+        "System.Threading.Tasks.Dataflow": "4.7.0"
+      }
+    }
+  }
+}
