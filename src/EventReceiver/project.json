@@ -1,0 +1,19 @@
+﻿{
+  "version": "1.0.0-*",
+  "buildOptions": {
+    "emitEntryPoint": true
+  },
+
+  "dependencies": {
+    "Fri.Xhl.Domain.Events": "1.1.1202",
+    "MassTransit": "3.4.1",
+    "MassTransit.RabbitMQ": "3.4.1"
+  },
+
+  "frameworks": {
+    "net452": {
+      "dependencies": {
+      }
+    }
+  }
+}
