@@ -15,7 +15,7 @@ namespace ReadEvents
     public class Program
     {
         private const int minConsumerCount = 1;
-        private const int maxConsumerCount = 10;
+        private const int maxConsumerCount = 12;
 
         private const int producerCount = 12; // max 12
 
@@ -23,9 +23,9 @@ namespace ReadEvents
         {
             Log.Enabled = false;
 
-            for (int i = minConsumerCount; i <= maxConsumerCount; i++)
+            for (int consumers = minConsumerCount; consumers <= maxConsumerCount; consumers++)
             {
-                Run(i);
+                Run(consumers);
             }
         }
 
@@ -37,7 +37,7 @@ namespace ReadEvents
             var queue =
                 new BufferBlock<EventDto>(new ExecutionDataflowBlockOptions
                 {
-//                    MaxDegreeOfParallelism = 1,
+                    MaxDegreeOfParallelism = Math.Min(maxConsumerCount, Environment.ProcessorCount)
 //                    MaxMessagesPerTask = 50,
 //                    BoundedCapacity  = 100 * consumerCount
                 });
@@ -114,7 +114,7 @@ namespace ReadEvents
 
             var connectionString = "Data Source=Lon-DevSQL-2K8;Initial Catalog=EventStore_Trunk;Integrated Security=True";
 
-            var sql = $"SELECT E.[Event],T.[TypeName] AS [EventType] FROM [Events_{partition}] E JOIN [Types] T ON T.TypeId=E.TypeId";
+            var sql = $"SELECT TOP 50000 E.[Event],T.[TypeName] AS [EventType] FROM [Events_{partition}] E JOIN [Types] T ON T.TypeId=E.TypeId";
 
             using (var cx = new SqlConnection(connectionString))
             {
@@ -142,6 +142,8 @@ namespace ReadEvents
 
     public class Consumer
     {
+        private volatile int _count = 0;
+
         public async Task<List<object>> AwaitEvents(IReceivableSourceBlock<EventDto> source)
         {
             var events = new List<object>();
@@ -153,10 +155,13 @@ namespace ReadEvents
                 if (source.TryReceive(null, out @event))
                 {
                     events.Add(Serializer.NonGeneric.Deserialize(@event.EventType, @event.EventStream));
+                    _count++;
                 }
 
                 Log.Message($"{Thread.CurrentThread.ManagedThreadId} Consumer");
             }
+
+            Log.Message($"Consumer {Thread.CurrentThread.ManagedThreadId}: {_count} events processed");
 
             return events;
         }
