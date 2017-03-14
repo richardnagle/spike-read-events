@@ -8,19 +8,20 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Threading.Tasks.Dataflow;
 using Fri.Xhl.Domain.Events;
+using MassTransit;
 using ProtoBuf;
 
 namespace ReadEvents
 {
     public static class Constants
     {
-        public const int MinConsumerCount = 4;
-        public const int MaxConsumerCount = 8;
+        public const int MinConsumerCount = 30;
+        public const int MaxConsumerCount = 100;
 
         public const int MinProducerCount = 2;
         public const int MaxProducerCount = 2; // max 12
 
-        public const int EventsToRead = 0; // max 200,000. 0 for all
+        public const int EventsToRead = 1000; // max 200,000. 0 for all
     }
 
     public class Program
@@ -29,16 +30,32 @@ namespace ReadEvents
         {
             Log.Enabled = false;
 
+            var bus = MassTransit.Bus.Factory.CreateUsingRabbitMq(x =>
+            {
+                x.Host(new Uri("rabbitmq://localhost/"), h =>
+                {
+                    h.Username("guest");
+                    h.Password("guest");
+                });
+
+            });
+
+            bus.Start();
+
+
             for (int producers = Constants.MinProducerCount; producers <= Constants.MaxProducerCount; producers++)
             {
                 for (int consumers = Constants.MinConsumerCount; consumers <= Constants.MaxConsumerCount; consumers++)
                 {
-                    Run(producers, consumers);
+                    Run(producers, consumers, bus);
                 }
             }
+
+            Console.WriteLine("stopping bus");
+            bus.Stop();
         }
 
-        private static void Run(int producerCount, int consumerCount)
+        private static void Run(int producerCount, int consumerCount, IBus bus)
         {
             var sw = new Stopwatch();
             sw.Start();
@@ -51,20 +68,24 @@ namespace ReadEvents
 //                    BoundedCapacity  = 100 * consumerCount
                 });
 
-            var consumers = new List<Task<List<object>>>(consumerCount);
+
+
+            var consumers = new List<Task<int>>(consumerCount);
 
             for (var i = 0; i < consumerCount; i++)
             {
-                consumers.Add(new Consumer().AwaitEvents(queue));
+                consumers.Add(new Consumer(bus).AwaitEvents(queue));
             }
 
             StartProducers(queue, producerCount).Wait();
 
-            var list = consumers.SelectMany(x => x.Result).ToList();
+            var eventCount = consumers.Sum(x => x.Result);
 
             sw.Stop();
 
-            Console.WriteLine($"{producerCount} producers {consumerCount} consumers -> {list.Count:###,###,###} events read in {sw.ElapsedMilliseconds}ms");
+            Console.WriteLine($"{producerCount} producers {consumerCount} consumers -> {eventCount:###,###,###} events read in {sw.ElapsedMilliseconds}ms");
+
+            
         }
 
         private static async Task StartProducers(ITargetBlock<EventDto> block, int producerCount)
@@ -158,28 +179,36 @@ namespace ReadEvents
 
     public class Consumer
     {
-        private volatile int _count = 0;
+        private readonly IBus _bus;
 
-        public async Task<List<object>> AwaitEvents(IReceivableSourceBlock<EventDto> source)
+        public Consumer(IBus bus)
         {
-            var events = new List<object>();
+            _bus = bus;
+        }
+
+        public async Task<int> AwaitEvents(IReceivableSourceBlock<EventDto> source)
+        {
+            var count = 0;
 
             while (await source.OutputAvailableAsync())
             {
-                EventDto @event;
+                EventDto eventDto;
 
-                if (source.TryReceive(null, out @event))
+                if (source.TryReceive(null, out eventDto))
                 {
-                    events.Add(Serializer.NonGeneric.Deserialize(@event.EventType, @event.EventStream));
-                    _count++;
+                    var @event = Serializer.NonGeneric.Deserialize(eventDto.EventType, eventDto.EventStream);
+#pragma warning disable 4014
+                    await _bus.Publish(@event);
+#pragma warning restore 4014
+                    count++;
                 }
 
                 Log.Message($"{Thread.CurrentThread.ManagedThreadId} Consumer");
             }
 
-            Log.Message($"Consumer {Thread.CurrentThread.ManagedThreadId}: {_count} events processed");
+            Log.Message($"Consumer {Thread.CurrentThread.ManagedThreadId}: {count} events processed");
 
-            return events;
+            return count;
         }
     }
 
