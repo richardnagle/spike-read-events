@@ -9,6 +9,9 @@ using System.Threading.Tasks;
 using System.Threading.Tasks.Dataflow;
 using Fri.Xhl.Domain.Events;
 using MassTransit;
+using NLog;
+using NLog.Config;
+using NLog.Targets;
 using ProtoBuf;
 
 namespace ReadEvents
@@ -21,14 +24,20 @@ namespace ReadEvents
         public const int MinProducerCount = 2;
         public const int MaxProducerCount = 2; // max 12
 
-        public const int EventsToRead = 20000; // max 200,000. 0 for all
+        public static readonly int EventsToRead = 20000; // max 200,000. 0 for all
+
+        public static readonly LogLevel LoggingLevel = LogLevel.Info;
     }
 
     public class Program
     {
+        private static Logger _logger;
+
         public static void Main(string[] args)
         {
-            Log.Enabled = false;
+            ConfigureLogging();
+            _logger = LogManager.GetCurrentClassLogger();
+            _logger.Info("started");
 
             var bus = MassTransit.Bus.Factory.CreateUsingRabbitMq(x =>
             {
@@ -40,19 +49,25 @@ namespace ReadEvents
 
             });
 
+            _logger.Info("starting bus");
             bus.Start();
-
+            _logger.Info("started bus");
 
             for (int producers = Constants.MinProducerCount; producers <= Constants.MaxProducerCount; producers++)
             {
                 for (int consumers = Constants.MinConsumerCount; consumers <= Constants.MaxConsumerCount; consumers++)
                 {
+                    _logger.Info($"started run for {consumers} consumers, {producers} producers");
                     Run(producers, consumers, bus);
+                    _logger.Info($"finished run for {consumers} consumers, {producers} producers");
                 }
             }
 
-            Console.WriteLine("stopping bus");
+            _logger.Info("stopping bus");
             bus.Stop();
+            _logger.Info("stopped bus");
+
+            _logger.Info("finished");
         }
 
         private static void Run(int producerCount, int consumerCount, IBus bus)
@@ -83,7 +98,7 @@ namespace ReadEvents
 
             sw.Stop();
 
-            Console.WriteLine($"{producerCount} producers {consumerCount} consumers -> {eventCount:###,###,###} events read in {sw.ElapsedMilliseconds}ms");
+            _logger.Warn($"{producerCount} producers {consumerCount} consumers -> {eventCount:###,###,###} events read in {sw.ElapsedMilliseconds}ms");
         }
 
         private static async Task StartProducers(ITargetBlock<EventDto> block, int producerCount)
@@ -101,16 +116,19 @@ namespace ReadEvents
 
             block.Complete();
         }
-    }
 
-    public static class Log
-    {
-        public static bool Enabled { get; set; }
-
-        public static void Message(string message)
+        private static void ConfigureLogging()
         {
-            if (!Enabled) return;
-            Console.WriteLine(message);
+            var config = new LoggingConfiguration();
+            var consoleTarget = new ColoredConsoleTarget
+            {
+                Layout = @"${date:format=HH\:mm\:ss} [${pad:padding=5:inner=${level:uppercase=true}}] ${message}"
+            };
+
+            config.AddTarget("console", consoleTarget);
+            config.AddRule(Constants.LoggingLevel, LogLevel.Fatal, consoleTarget);
+
+            LogManager.Configuration = config;
         }
     }
 
@@ -127,6 +145,8 @@ namespace ReadEvents
 
     public class Producer
     {
+        private static readonly Logger _logger = LogManager.GetCurrentClassLogger();
+
         private readonly TypeMap _typeMap;
 
         public Producer(TypeMap typeMap)
@@ -136,7 +156,7 @@ namespace ReadEvents
 
         public async Task Start(ITargetBlock<EventDto> target, int yyyy, int mm, int producerCount)
         {
-            Log.Message($"Start read for {mm}-{yyyy}");
+            _logger.Debug("Start read for {0}-{1}",mm,yyyy);
 
             var partition = $"{yyyy}_{mm:D2}_01_00_00";
 
@@ -166,18 +186,23 @@ namespace ReadEvents
                                 EventType = _typeMap[rdr.GetString(1)],
                                 EventStream = rdr.GetStream(0)
                             });
-                        Log.Message($"{Thread.CurrentThread.ManagedThreadId} Producer");
+                        _logger.Trace("Producer {0}-{1} read on thread {2}",mm,yyyy,Thread.CurrentThread.ManagedThreadId);
                     }
                 }
             }
 
-            Log.Message($"Complete read for {mm}-{yyyy}");
+            _logger.Debug("Complete read for {0}-{1}",mm,yyyy);
         }
     }
 
     public class Consumer
     {
         private readonly IBus _bus;
+
+        private static readonly Logger _logger = LogManager.GetCurrentClassLogger();
+
+        private static int _instanceIdCounter = 1;
+        private readonly int _instanceId = _instanceIdCounter++;
 
         public Consumer(IBus bus)
         {
@@ -188,21 +213,24 @@ namespace ReadEvents
         {
             var count = 0;
 
+            _logger.Debug("Consumer {0} started", _instanceId);
+
             while (await source.OutputAvailableAsync())
             {
                 EventDto eventDto;
 
                 if (source.TryReceive(null, out eventDto))
                 {
+                    if (count==0) _logger.Info("Consumer {0} started consuming", _instanceId);
                     var @event = Serializer.NonGeneric.Deserialize(eventDto.EventType, eventDto.EventStream);
                     await _bus.Publish(@event);
                     count++;
                 }
 
-                Log.Message($"{Thread.CurrentThread.ManagedThreadId} Consumer");
+                _logger.Trace("Consumer {0} on thread {1}", _instanceId, Thread.CurrentThread.ManagedThreadId);
             }
 
-            Log.Message($"Consumer {Thread.CurrentThread.ManagedThreadId}: {count} events processed");
+            _logger.Debug("Consumer {0}: {1} events processed", _instanceId, count);
 
             return count;
         }
