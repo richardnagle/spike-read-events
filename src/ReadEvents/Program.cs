@@ -15,13 +15,13 @@ namespace ReadEvents
 {
     public static class Constants
     {
-        public const int MinConsumerCount = 30;
-        public const int MaxConsumerCount = 100;
+        public const int MinConsumerCount = 25;
+        public const int MaxConsumerCount = 25;
 
         public const int MinProducerCount = 2;
         public const int MaxProducerCount = 2; // max 12
 
-        public const int EventsToRead = 1000; // max 200,000. 0 for all
+        public const int EventsToRead = 20000; // max 200,000. 0 for all
     }
 
     public class Program
@@ -84,8 +84,6 @@ namespace ReadEvents
             sw.Stop();
 
             Console.WriteLine($"{producerCount} producers {consumerCount} consumers -> {eventCount:###,###,###} events read in {sw.ElapsedMilliseconds}ms");
-
-            
         }
 
         private static async Task StartProducers(ITargetBlock<EventDto> block, int producerCount)
@@ -197,9 +195,7 @@ namespace ReadEvents
                 if (source.TryReceive(null, out eventDto))
                 {
                     var @event = Serializer.NonGeneric.Deserialize(eventDto.EventType, eventDto.EventStream);
-#pragma warning disable 4014
                     await _bus.Publish(@event);
-#pragma warning restore 4014
                     count++;
                 }
 

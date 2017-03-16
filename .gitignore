@@ -4,3 +4,5 @@ project.lock.json
 *.log
 bin/
 obj/
+.idea/
+.vscode/
