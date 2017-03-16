@@ -18,15 +18,15 @@ namespace ReadEvents
 {
     public static class Constants
     {
-        public const int MinConsumerCount = 25;
-        public const int MaxConsumerCount = 25;
+        public static int MinConsumerCount = 2;
+        public static int MaxConsumerCount = 2;
 
-        public const int MinProducerCount = 2;
-        public const int MaxProducerCount = 2; // max 12
+        public static int ConsumerSkip = 1;
+        public static int MinProducerCount = 2;
+        public static int MaxProducerCount = 2; // max 12
+        public static int EventsToRead = 20000; // max 200,000. 0 for all
 
-        public static readonly int EventsToRead = 20000; // max 200,000. 0 for all
-
-        public static readonly LogLevel LoggingLevel = LogLevel.Info;
+        public static readonly LogLevel LoggingLevel = LogLevel.Warn;
     }
 
     public class Program
@@ -38,6 +38,13 @@ namespace ReadEvents
             ConfigureLogging();
             _logger = LogManager.GetCurrentClassLogger();
             _logger.Info("started");
+
+            SetFromCli(args, 0, x => Constants.MinConsumerCount = x);
+            SetFromCli(args, 1, x => Constants.MaxConsumerCount = x);
+            SetFromCli(args, 2, x => Constants.ConsumerSkip = x);
+            SetFromCli(args, 3, x => Constants.MinProducerCount = x);
+            SetFromCli(args, 4, x => Constants.MaxProducerCount = x);
+            SetFromCli(args, 5, x => Constants.EventsToRead = x);
 
             var bus = MassTransit.Bus.Factory.CreateUsingRabbitMq(x =>
             {
@@ -53,9 +60,9 @@ namespace ReadEvents
             bus.Start();
             _logger.Info("started bus");
 
-            for (int producers = Constants.MinProducerCount; producers <= Constants.MaxProducerCount; producers++)
+            for (int consumers = Constants.MinConsumerCount; consumers <= Constants.MaxConsumerCount; consumers+=Constants.ConsumerSkip)
             {
-                for (int consumers = Constants.MinConsumerCount; consumers <= Constants.MaxConsumerCount; consumers++)
+                for (int producers = Constants.MinProducerCount; producers <= Constants.MaxProducerCount; producers++)
                 {
                     _logger.Info($"started run for {consumers} consumers, {producers} producers");
                     Run(producers, consumers, bus);
@@ -68,6 +75,17 @@ namespace ReadEvents
             _logger.Info("stopped bus");
 
             _logger.Info("finished");
+        }
+
+        private static void SetFromCli(string[] args, int index, Action<int> action)
+        {
+            if (index >= args.Length) return;
+
+            int value;
+
+            if (!int.TryParse(args[index], out value)) return;
+
+            action(value);
         }
 
         private static void Run(int producerCount, int consumerCount, IBus bus)
