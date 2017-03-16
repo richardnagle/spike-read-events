@@ -17,6 +17,8 @@ namespace EventReceiver
                     h.Password("guest");
                 });
 
+                cfg.Durable = false;
+
                 cfg.ReceiveEndpoint(host, "event_receiver_queue", e =>
                 {
                     e.Consumer<EventConsumer>();
@@ -30,11 +32,16 @@ namespace EventReceiver
 
     public class EventConsumer: IConsumer<Message>
     {
+        private static int count = 0;
+
         public async Task Consume(ConsumeContext<Message> context)
         {
-            var message = context.Message;
-            await Console.Out.WriteLineAsync($"{DateTime.Now.ToLongTimeString()} Received event {message.GetType()}");
+            count++;
 
+            if (count%1000 == 0)
+            {
+                await Console.Out.WriteLineAsync($"{count} messages received");
+            }
         }
     }
 }
