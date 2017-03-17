@@ -48,10 +48,10 @@ namespace ReadEvents
 
             var bus = MassTransit.Bus.Factory.CreateUsingRabbitMq(x =>
             {
-                x.Host(new Uri("rabbitmq://localhost/"), h =>
+                x.Host(new Uri("rabbitmq://devwrkstn00419/"), h =>
                 {
-                    h.Username("guest");
-                    h.Password("guest");
+                    h.Username("admin");
+                    h.Password("admin");
                 });
 
             });

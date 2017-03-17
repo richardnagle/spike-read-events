@@ -11,10 +11,10 @@ namespace EventReceiver
         {
             var bus = MassTransit.Bus.Factory.CreateUsingRabbitMq(cfg =>
             {
-                var host = cfg.Host(new Uri("rabbitmq://localhost/"), h =>
+                var host = cfg.Host(new Uri("rabbitmq://devwrkstn00419/"), h =>
                 {
-                    h.Username("guest");
-                    h.Password("guest");
+                    h.Username("admin");
+                    h.Password("admin");
                 });
 
                 cfg.Durable = false;
