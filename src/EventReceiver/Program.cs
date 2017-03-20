@@ -11,7 +11,7 @@ namespace EventReceiver
         {
             var bus = MassTransit.Bus.Factory.CreateUsingRabbitMq(cfg =>
             {
-                var host = cfg.Host(new Uri("rabbitmq://devwrkstn00419/"), h =>
+                var host = cfg.Host(new Uri("rabbitmq://localhost/mass-non-durable"), h =>
                 {
                     h.Username("admin");
                     h.Password("admin");
@@ -22,6 +22,7 @@ namespace EventReceiver
                 cfg.ReceiveEndpoint(host, "event_receiver_queue", e =>
                 {
                     e.Consumer<EventConsumer>();
+                    e.Durable = false;
                 });
 
             });
